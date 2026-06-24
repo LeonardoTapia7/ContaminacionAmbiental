@@ -1,0 +1,32 @@
+version: '3.8'
+services:
+  mongo:
+    image: mongo:6.0
+    container_name: contaminacion_mongo
+    restart: unless-stopped
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo_data:/data/db
+      # Mount init scripts and seed so mongo can initialize the DB on first run
+      - ./seed/init-mongo:/docker-entrypoint-initdb.d:ro
+  app:
+    build:
+      context: ./contaminacion
+      dockerfile: Dockerfile
+    container_name: contaminacion_app
+    restart: unless-stopped
+    depends_on:
+      - mongo
+    ports:
+      - "8080:8080"
+    environment:
+      # Force the application to use the docker-compose mongo service hostname
+      - SPRING_DATA_MONGODB_URI=mongodb://mongo:27017/contaminacion
+    links:
+      - mongo:mongo
+
+volumes:
+  mongo_data:
+    name: contaminacion_mongo_data
+

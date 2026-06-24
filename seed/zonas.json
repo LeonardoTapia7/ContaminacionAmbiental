@@ -1,0 +1,59 @@
+[
+  {
+    "_id": "zona-industrial-1",
+    "_class": "com.contaminacion.model.ZonaIndustrial",
+    "nombre": "Zona Industrial Norte",
+    "numeroFabricasActivas": 5,
+    "climaActual": {
+      "temperatura": 25.0,
+      "velocidadViento": 5.0,
+      "humedad": 60.0
+    },
+    "contaminacionActual": {
+      "co2": 400.5,
+      "so2": 10.2,
+      "no2": 35.1,
+      "pm25": 55.0,
+      "o3": 12.5,
+      "fecha": "2026-06-23"
+    }
+  },
+  {
+    "_id": "zona-residencial-1",
+    "_class": "com.contaminacion.model.ZonaResidencial",
+    "nombre": "Barrio Centro",
+    "restriccionVehicularActiva": false,
+    "climaActual": {
+      "temperatura": 22.0,
+      "velocidadViento": 3.5,
+      "humedad": 55.0
+    },
+    "contaminacionActual": {
+      "co2": 380.0,
+      "so2": 5.0,
+      "no2": 25.0,
+      "pm25": 30.0,
+      "o3": 10.0,
+      "fecha": "2026-06-23"
+    }
+  },
+  {
+    "_id": "zona-urbana-1",
+    "_class": "com.contaminacion.model.ZonaUrbana",
+    "nombre": "Zona Urbana Central",
+    "climaActual": {
+      "temperatura": 24.0,
+      "velocidadViento": 4.0,
+      "humedad": 50.0
+    },
+    "contaminacionActual": {
+      "co2": 390.0,
+      "so2": 7.0,
+      "no2": 28.0,
+      "pm25": 40.0,
+      "o3": 11.0,
+      "fecha": "2026-06-23"
+    }
+  }
+]
+

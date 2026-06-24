@@ -1,0 +1,345 @@
+# 📐 DIAGRAMA DE ARQUITECTURA
+
+## Flujo General del Sistema
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                     NAVEGADOR WEB (Puerto 8080)                │
+│                  http://localhost:8080                          │
+└────────────────────────────┬────────────────────────────────────┘
+                             │
+                             ▼
+┌─────────────────────────────────────────────────────────────────┐
+│                    CAPA DE PRESENTACIÓN                         │
+│  ┌───────────────────────────────────────────────────────────┐  │
+│  │           MainView.java (Vaadin Route="")                │  │
+│  │                                                           │  │
+│  │  ┌──────────────────────────┐  ┌──────────────────────┐  │  │
+│  │  │   Grid (5 Zonas)         │  │  Formulario Entrada  │  │  │
+│  │  │  NORTE, CENTRO, SUR,     │  │  CO2, SO2, NO2,      │  │  │
+│  │  │  VALLES, NOROCCIDENTE    │  │  PM2.5, O3,          │  │  │
+│  │  │                          │  │  Temp, Viento, Hum.  │  │  │
+│  │  └──────────────────────────┘  └──────────────────────┘  │  │
+│  │                                                           │  │
+│  │  [Guardar] [Predecir 24h] [Exportar CSV]                 │  │
+│  │  Notificaciones & Dialogs (Alertas OMS)                  │  │
+│  └───────────────────────────────────────────────────────────┘  │
+└────────────────────────────┬────────────────────────────────────┘
+                             │ HTTP/REST (Spring)
+                             ▼
+┌─────────────────────────────────────────────────────────────────┐
+│                   CAPA DE SERVICIOS                             │
+│  ┌───────────────────────────────────────────────────────────┐  │
+│  │  PrediccionService (interfaz)                             │  │
+│  │    ↓                                                       │  │
+│  │  CalculadorPrediccion (implementación)                    │  │
+│  │  • Regresión lineal múltiple                             │  │
+│  │  • C_t+24 = 0.6·C_t + 0.1·Temp + ...                    │  │
+│  │  • Retorna: Contaminacion (predicción 24h)              │  │
+│  └───────────────────────────────────────────────────────────┘  │
+│  ┌───────────────────────────────────────────────────────────┐  │
+│  │  ReporteService (interfaz)                                │  │
+│  │    ↓                                                       │  │
+│  │  ReporteServiceImpl (implementación)                       │  │
+│  │  • Genera CSV con estado de 5 zonas                      │  │
+│  │  • Columnas: id, nombre, fecha, CO2, SO2, ...           │  │
+│  └───────────────────────────────────────────────────────────┘  │
+└────────────────────────────┬────────────────────────────────────┘
+                             │ Inyección de Dependencias (Spring)
+                             ▼
+┌─────────────────────────────────────────────────────────────────┐
+│                  CAPA DE PERSISTENCIA                           │
+│  ┌───────────────────────────────────────────────────────────┐  │
+│  │  ZonaRepository (interfaz)                                │  │
+│  │    ↓                                                       │  │
+│  │  ZonaRepositoryMongo (@Repository @Primary)              │  │
+│  │  • Inicializa datos (si BD vacía)                         │  │
+│  │  • Delega a: ZonaMongoSpringRepository                    │  │
+│  │    ↓                                                       │  │
+│  │  ZonaMongoSpringRepository (MongoRepository<ZonaUrbana>)  │  │
+│  │  • Spring Data → genera CRUD                             │  │
+│  │  • save(), findById(), findAll(), delete()               │  │
+│  └───────────────────────────────────────────────────────────┘  │
+└────────────────────────────┬────────────────────────────────────┘
+                             │ Protocolo MongoDB (BSON)
+                             ▼
+┌─────────────────────────────────────────────────────────────────┐
+│              CONTENEDOR DOCKER (MongoDB 6.0)                    │
+│  ┌───────────────────────────────────────────────────────────┐  │
+│  │  localhost:27017 (Puerto externo)                         │  │
+│  │                                                           │  │
+│  │  ┌─────────────────────────────────────────────────────┐  │  │
+│  │  │  Base de Datos: "contaminacion"                    │  │  │
+│  │  │                                                     │  │  │
+│  │  │  ┌───────────────────────────────────────────────┐  │  │  │
+│  │  │  │ Colección: "zonas"                           │  │  │  │
+│  │  │  │                                               │  │  │  │
+│  │  │  │  Documento 1:                                │  │  │  │
+│  │  │  │  {                                            │  │  │  │
+│  │  │  │    "_id": "NORTE",                           │  │  │  │
+│  │  │  │    "_class": "ZonaIndustrial",              │  │  │  │
+│  │  │  │    "nombre": "Zona Norte",                  │  │  │  │
+│  │  │  │    "contaminacionActual": {                 │  │  │  │
+│  │  │  │      "co2": 3.45,                           │  │  │  │
+│  │  │  │      "so2": 18.2,                           │  │  │  │
+│  │  │  │      "no2": 32.1,                           │  │  │  │
+│  │  │  │      "pm25": 24.6,                          │  │  │  │
+│  │  │  │      "o3": 78.5,                            │  │  │  │
+│  │  │  │      "fecha": "2026-06-23"                  │  │  │  │
+│  │  │  │    },                                        │  │  │  │
+│  │  │  │    "climaActual": {                         │  │  │  │
+│  │  │  │      "temperatura": 18.2,                   │  │  │  │
+│  │  │  │      "velocidadViento": 3.5,               │  │  │  │
+│  │  │  │      "humedad": 65.0                        │  │  │  │
+│  │  │  │    },                                        │  │  │  │
+│  │  │  │    "historico30Dias": [                     │  │  │  │
+│  │  │  │      {...día 0...},                         │  │  │  │
+│  │  │  │      {...día -1...},                        │  │  │  │
+│  │  │  │      ...(30 registros)...                   │  │  │  │
+│  │  │  │    ],                                        │  │  │  │
+│  │  │  │    "numeroFabricasActivas": 5               │  │  │  │
+│  │  │  │  }                                           │  │  │  │
+│  │  │  │                                               │  │  │  │
+│  │  │  │  Documento 2... Documento 5 (resto de zonas)│  │  │  │
+│  │  │  │                                               │  │  │  │
+│  │  │  └───────────────────────────────────────────────┘  │  │  │
+│  │  │                                                     │  │  │
+│  │  │  Volumen Persistente: contaminacion_mongo_data     │  │  │
+│  │  │  (Los datos persisten incluso si se reinicia)      │  │  │
+│  │  │                                                     │  │  │
+│  │  └─────────────────────────────────────────────────────┘  │  │
+│  └───────────────────────────────────────────────────────────┘  │
+│  Comando: docker-compose up -d                                  │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+## Flujo de Datos: Guardar Datos
+
+```
+Usuario escribe en Formulario
+    ↓
+Click "Guardar"
+    ↓
+MainView.onSave()
+    ↓
+Crear: Contaminacion (CO2, SO2, NO2, PM2.5, O3, fecha=hoy)
+       Clima (Temp, Viento, Humedad)
+    ↓
+Validar (no negativos, rangos válidos)
+    ↓
+ZonaRepository.save(zona)
+    ↓
+ZonaRepositoryMongo.save()
+    ↓
+ZonaMongoSpringRepository.save()
+    ↓
+MongoDB: actualiza documento
+    ↓
+Notificación: "Datos guardados" ✅
+```
+
+---
+
+## Flujo de Datos: Predecir 24h
+
+```
+Usuario click "Predecir 24h"
+    ↓
+MainView.onPredict()
+    ↓
+PrediccionService.predecir24h(zonaSeleccionada)
+    ↓
+CalculadorPrediccion.predecir24h()
+    ├─ Obtiene: contaminacionActual, climaActual, histórico
+    ├─ Para cada contaminante (CO2, SO2, NO2, PM2.5, O3):
+    │  └─ C_t+24 = 0.6·C_t + 0.1·Temp + 0.05·Hum - 0.25·Viento + b5
+    └─ Retorna: Contaminacion predicción
+    ↓
+Mostrar Dialog con valores predichos
+    ↓
+Verificar vs límites OMS:
+    ├─ PM2.5 > 15? ⚠️ ALERTA
+    ├─ NO2 > 25? ⚠️ ALERTA
+    ├─ SO2 > 40? ⚠️ ALERTA
+    ├─ O3 > 100? ⚠️ ALERTA
+    └─ CO2 > 4.0? ⚠️ ALERTA
+    ↓
+Si hay alertas: Notification("ALERTA: SO2 NO2...")
+```
+
+---
+
+## Flujo de Datos: Exportar CSV
+
+```
+Usuario click "Exportar CSV"
+    ↓
+MainView.onExport()
+    ↓
+ZonaRepository.findAll() → Lista<ZonaUrbana>
+    ↓
+ReporteService.generarCsvResumen(zonas)
+    ↓
+Por cada zona:
+    ├─ id, nombre, fecha, CO2, SO2, NO2, PM2.5, O3
+    └─ Generar fila CSV
+    ↓
+String CSV generado
+    ↓
+Base64 encode
+    ↓
+Crear Anchor (link de descarga)
+    ↓
+Trigger click → Descarga: reporte_zonas.csv
+```
+
+---
+
+## Modelos de Datos (Diagrama ER)
+
+```
+┌─────────────────────────────────┐
+│         ZonaUrbana              │
+│ (Abstracta, @Document)          │
+├─────────────────────────────────┤
+│ @Id: String id                  │
+│ - String nombre                 │
+│ - Clima climaActual             │
+│ - Contaminacion contaminacion   │
+│ - List<Contaminacion> historico │
+├─────────────────────────────────┤
+│ + agregarRegistroHistorico()    │
+│ + aplicarMedidasMitigacion() *  │
+└──────────┬──────────────────────┘
+           │
+    ┌──────┴─────┐
+    │             │
+    ▼             ▼
+┌──────────────┐ ┌────────────────────┐
+│ZonaIndustrial│ │ZonaResidencial     │
+├──────────────┤ ├────────────────────┤
+│int numFab    │ │boolean restricción │
+├──────────────┤ ├────────────────────┤
+│+aplicar... ✓ │ │+aplicar... ✓       │
+│(reduce CO2) │ │(restricción)       │
+└──────────────┘ └────────────────────┘
+
+
+┌─────────────────────────────────┐
+│         Clima                   │
+├─────────────────────────────────┤
+│ - double temperatura (°C)       │
+│ - double velocidadViento (m/s)  │
+│ - double humedad (%)            │
+├─────────────────────────────────┤
+│ + getters/setters (validados)   │
+└─────────────────────────────────┘
+
+
+┌─────────────────────────────────┐
+│      Contaminacion              │
+├─────────────────────────────────┤
+│ - double co2 (mg/m³)            │
+│ - double so2 (µg/m³)            │
+│ - double no2 (µg/m³)            │
+│ - double pm25 (µg/m³)           │
+│ - double o3 (µg/m³)             │
+│ - LocalDate fecha               │
+├─────────────────────────────────┤
+│ + getters/setters (≥0)          │
+└─────────────────────────────────┘
+```
+
+---
+
+## Inyección de Dependencias (Spring)
+
+```
+@SpringBootApplication
+Application.java
+    ↓
+├─ MainView
+│  ├─ @Autowired ZonaRepository
+│  ├─ @Autowired PrediccionService
+│  └─ @Autowired ReporteService
+│
+├─ @Repository @Primary
+│  ZonaRepositoryMongo
+│  ├─ @Autowired ZonaMongoSpringRepository
+│  └─ @PostConstruct initIfEmpty()
+│
+├─ @Service
+│  CalculadorPrediccion
+│
+├─ @Service
+│  ReporteServiceImpl
+│
+└─ Spring Data
+   MongoRepository<ZonaUrbana, String>
+   ↓
+   MongoDB Driver
+   ↓
+   localhost:27017
+```
+
+---
+
+## Validaciones en Cascada
+
+```
+User Input (Formulario)
+    ↓
+UI Validation (NumberField: min, max)
+    ↓
+MainView.onSave()
+    ↓
+Crear Objetos:
+├─ new Contaminacion(co2, so2, no2, pm25, o3, fecha)
+│  └─ Setters validan: if (val < 0) throw
+└─ new Clima(temp, viento, humedad)
+   └─ Setters validan: if (temp < -50 || temp > 60) throw
+    ↓
+Exception? → Catch en MainView → Notification("Error: ...")
+    ↓
+ZonaRepository.save()
+    ↓
+MongoDB guardar documento
+    ↓
+Grid refrescado
+```
+
+---
+
+## Ciclo de Vida del Contenedor
+
+```
+Terminal: docker-compose up -d
+    ↓
+Docker descarga imagen mongo:6.0
+    ↓
+Docker crea volumen: contaminacion_mongo_data
+    ↓
+Docker crea contenedor: contaminacion_mongo
+    ↓
+Inicia proceso mongod en puerto 27017
+    ↓
+Spring Boot Application conecta
+    ↓
+ZonaRepositoryMongo.initIfEmpty()
+├─ SELECT COUNT(*) FROM zonas
+├─ Si count == 0:
+│  └─ INSERT 5 zonas + 30 días histórico
+└─ Si count > 0:
+   └─ Usar datos existentes
+    ↓
+MainView carga Grid con datos
+    ↓
+Usuario interactúa (save, predict, export)
+```
+
+---
+
+*Diagrama generado: 2026-06-23*
+
