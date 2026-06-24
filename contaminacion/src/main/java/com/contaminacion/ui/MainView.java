@@ -9,8 +9,13 @@ import com.contaminacion.service.ReporteService;
 import com.vaadin.flow.component.button.Button;
 import com.vaadin.flow.component.button.ButtonVariant;
 import com.vaadin.flow.component.dialog.Dialog;
+import com.vaadin.flow.component.formlayout.FormLayout;
+import com.vaadin.flow.component.combobox.ComboBox;
+import com.vaadin.flow.component.textfield.TextField;
+import com.vaadin.flow.component.checkbox.Checkbox;
+import com.vaadin.flow.component.html.Span;
 import com.vaadin.flow.component.grid.Grid;
-import com.vaadin.flow.component.html.Anchor;
+// ...existing code...
 import com.vaadin.flow.component.html.Div;
 import com.vaadin.flow.component.html.H2;
 import com.vaadin.flow.component.notification.Notification;
@@ -20,8 +25,7 @@ import com.vaadin.flow.component.textfield.NumberField;
 import com.vaadin.flow.router.Route;
 import org.springframework.beans.factory.annotation.Autowired;
 
-import java.nio.charset.StandardCharsets;
-import java.util.Base64;
+import com.vaadin.flow.component.UI;
 import java.util.List;
 
 @Route("")
@@ -43,6 +47,7 @@ public class MainView extends VerticalLayout {
     private NumberField humedadField = new NumberField("Humedad (%)");
 
     private ZonaUrbana selected;
+    private Div alertsBox;
 
     @Autowired
     public MainView(ZonaRepository zonaRepository, PrediccionService prediccionService, ReporteService reporteService) {
@@ -77,9 +82,11 @@ public class MainView extends VerticalLayout {
     }
 
     private Div buildForm() {
-        Div form = new Div();
-        form.getStyle().set("min-width", "360px");
+        Div container = new Div();
+        container.getStyle().set("min-width", "380px");
 
+        // --- Edit selected zone section
+        H2 editTitle = new H2("Editar zona seleccionada");
         Button save = new Button("Guardar");
         save.addThemeVariants(ButtonVariant.LUMO_PRIMARY);
         save.addClickListener(e -> onSave());
@@ -90,8 +97,130 @@ public class MainView extends VerticalLayout {
         Button export = new Button("Exportar CSV");
         export.addClickListener(e -> onExport());
 
-        form.add(co2Field, so2Field, no2Field, pm25Field, o3Field, tempField, vientoField, humedadField, new HorizontalLayout(save, predict, export));
-        return form;
+        FormLayout editForm = new FormLayout();
+        editForm.add(co2Field, so2Field, no2Field, pm25Field, o3Field, tempField, vientoField, humedadField);
+        HorizontalLayout editActions = new HorizontalLayout(save, predict, export);
+
+        // --- Alerts section
+        H2 alertsTitle = new H2("Alertas");
+        if (this.alertsBox == null) {
+            this.alertsBox = new Div();
+            this.alertsBox.setId("alerts-box");
+            this.alertsBox.getStyle().set("padding", "8px");
+            this.alertsBox.getStyle().set("border", "1px solid var(--lumo-contrast-10pct)");
+            this.alertsBox.getStyle().set("border-radius", "6px");
+            this.alertsBox.getStyle().set("min-height", "80px");
+        }
+
+        // populate alerts now
+        refreshAlerts(this.alertsBox);
+
+        // --- Add zone section
+        H2 addTitle = new H2("Añadir nueva zona");
+        FormLayout addForm = new FormLayout();
+        TextField nombreField = new TextField("Nombre");
+        ComboBox<String> tipoBox = new ComboBox<>("Tipo");
+        tipoBox.setItems("Residencial", "Industrial");
+        NumberField fabricasField = new NumberField("N.º fábricas");
+        fabricasField.setMin(0);
+        Checkbox restriccionBox = new Checkbox("Restricción vehicular activa");
+
+        NumberField addCo2 = new NumberField("CO2 (mg/m3)");
+        NumberField addSo2 = new NumberField("SO2 (ug/m3)");
+        NumberField addNo2 = new NumberField("NO2 (ug/m3)");
+        NumberField addPm25 = new NumberField("PM2.5 (ug/m3)");
+        NumberField addO3 = new NumberField("O3 (ug/m3)");
+        NumberField addTemp = new NumberField("Temperatura (C)");
+        NumberField addViento = new NumberField("Vel. Viento (m/s)");
+        NumberField addHumedad = new NumberField("Humedad (%)");
+
+        Button addZonaBtn = new Button("Añadir zona");
+        addZonaBtn.addThemeVariants(ButtonVariant.LUMO_SUCCESS);
+        addZonaBtn.addClickListener(e -> onAddZona(nombreField, tipoBox, fabricasField, restriccionBox, addCo2, addSo2, addNo2, addPm25, addO3, addTemp, addViento, addHumedad));
+
+        addForm.add(nombreField, tipoBox, fabricasField, restriccionBox, addCo2, addSo2, addNo2, addPm25, addO3, addTemp, addViento, addHumedad);
+
+        container.add(editTitle, editForm, editActions, alertsTitle, this.alertsBox, addTitle, addForm, addZonaBtn);
+        return container;
+    }
+
+    private void refreshAlerts(Div box) {
+        box.removeAll();
+        List<ZonaUrbana> zonas = zonaRepository.findAll();
+        boolean any = false;
+        for (ZonaUrbana z : zonas) {
+            Contaminacion c = z.getContaminacionActual();
+            String msg = c == null ? "Sin datos" : checkOms(c);
+            if (msg != null && !msg.isEmpty()) {
+                any = true;
+                HorizontalLayout row = new HorizontalLayout();
+                Span lbl = new Span(z.getNombre() + ": " + msg);
+                Button aplicar = new Button("Aplicar medidas");
+                aplicar.addClickListener(ev -> {
+                    try {
+                        z.aplicarMedidasMitigacion();
+                        zonaRepository.save(z);
+                        Notification.show("Medidas aplicadas a " + z.getNombre(), 3000, Notification.Position.TOP_CENTER);
+                        refreshGrid();
+                        refreshAlerts(this.alertsBox);
+                    } catch (Exception ex) {
+                        Notification.show("Error aplicando medidas: " + ex.getMessage(), 4000, Notification.Position.MIDDLE);
+                    }
+                });
+                row.add(lbl, aplicar);
+                box.add(row);
+            }
+        }
+        if (!any) {
+            box.add(new Span("No hay alertas"));
+        }
+    }
+
+    private void onAddZona(TextField nombreField, ComboBox<String> tipoBox, NumberField fabricasField, Checkbox restriccionBox,
+                           NumberField addCo2, NumberField addSo2, NumberField addNo2, NumberField addPm25, NumberField addO3,
+                           NumberField addTemp, NumberField addViento, NumberField addHumedad) {
+        String nombre = nombreField.getValue();
+        if (nombre == null || nombre.trim().isEmpty()) {
+            Notification.show("Ingrese un nombre para la zona", 3000, Notification.Position.MIDDLE);
+            return;
+        }
+        String tipo = tipoBox.getValue();
+        ZonaUrbana nueva;
+        try {
+            if ("Industrial".equals(tipo)) {
+                int nFab = fabricasField.getValue() == null ? 0 : fabricasField.getValue().intValue();
+                nueva = new com.contaminacion.model.ZonaIndustrial(null, nombre, nFab);
+            } else {
+                boolean r = restriccionBox.getValue() == null ? false : restriccionBox.getValue();
+                nueva = new com.contaminacion.model.ZonaResidencial(null, nombre, r);
+            }
+
+            // set contaminacion/clima if provided
+            double co2 = addCo2.getValue() == null ? 0.0 : addCo2.getValue();
+            double so2 = addSo2.getValue() == null ? 0.0 : addSo2.getValue();
+            double no2 = addNo2.getValue() == null ? 0.0 : addNo2.getValue();
+            double pm25 = addPm25.getValue() == null ? 0.0 : addPm25.getValue();
+            double o3 = addO3.getValue() == null ? 0.0 : addO3.getValue();
+            com.contaminacion.model.Contaminacion c = new com.contaminacion.model.Contaminacion(co2, so2, no2, pm25, o3, null);
+            nueva.setContaminacionActual(c);
+
+            double t = addTemp.getValue() == null ? 20.0 : addTemp.getValue();
+            double v = addViento.getValue() == null ? 0.0 : addViento.getValue();
+            double h = addHumedad.getValue() == null ? 50.0 : addHumedad.getValue();
+            nueva.setClimaActual(new com.contaminacion.model.Clima(t, v, h));
+
+            zonaRepository.save(nueva);
+            Notification.show("Zona añadida: " + nombre, 3000, Notification.Position.TOP_CENTER);
+            refreshGrid();
+            refreshAlerts(this.alertsBox);
+
+            // clear fields
+            nombreField.clear(); tipoBox.clear(); fabricasField.clear(); restriccionBox.clear();
+            addCo2.clear(); addSo2.clear(); addNo2.clear(); addPm25.clear(); addO3.clear();
+            addTemp.clear(); addViento.clear(); addHumedad.clear();
+        } catch (Exception ex) {
+            Notification.show("Error al crear zona: " + ex.getMessage(), 4000, Notification.Position.MIDDLE);
+        }
     }
 
     private void onSelectZona(ZonaUrbana zona) {
@@ -125,6 +254,7 @@ public class MainView extends VerticalLayout {
             zonaRepository.save(selected);
             Notification.show("Datos guardados.", 2000, Notification.Position.TOP_CENTER);
             refreshGrid();
+            refreshAlerts(this.alertsBox);
         } catch (Exception ex) {
             Notification.show("Error al guardar: " + ex.getMessage(), 4000, Notification.Position.MIDDLE);
         }
@@ -165,14 +295,12 @@ public class MainView extends VerticalLayout {
     private void onExport() {
         List<ZonaUrbana> zonas = zonaRepository.findAll();
         String csv = reporteService.generarCsvResumen(zonas);
-        // create data URL for download
-        String base64 = Base64.getEncoder().encodeToString(csv.getBytes(StandardCharsets.UTF_8));
-        String href = "data:text/csv;base64," + base64;
-        Anchor download = new Anchor(href, "Descargar reporte.csv");
-        download.getElement().setAttribute("download", "reporte_zonas.csv");
-        add(download);
-        download.getElement().callJsFunction("click");
-        remove(download);
+
+        // Use client-side Blob creation to trigger download reliably without deprecated server APIs
+        // Pass CSV string as argument to executeJs (Vaadin will serialize it safely)
+        UI.getCurrent().getPage().executeJs(
+            "(function(csv, filename){ const blob = new Blob([csv], {type: 'text/csv;charset=utf-8'}); const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url; a.download = filename; document.body.appendChild(a); a.click(); setTimeout(()=>{ URL.revokeObjectURL(url); a.remove(); }, 100); })( $0, $1 );",
+            csv, "reporte_zonas.csv");
     }
 
     private void refreshGrid() {
